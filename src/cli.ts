@@ -41,10 +41,18 @@ Usage:
 Options:
   --model-id <id>             Model identifier passed to the OpenAI-compat
                               endpoint. Default: env MODEL_ID or 'gpt-4o'.
-  --source <fixture|path>     Where to load problems from. Default: fixture.
+  --source <fixture|huggingface|huggingface:<config>|path>
+                              Where to load problems from. Default: fixture.
                               'fixture' loads the bundled four-problem smoke
-                              set; <path> points at a .jsonl matching the
-                              upstream code_generation_lite schema.
+                              set; 'huggingface' fetches from
+                              livecodebench/code_generation_lite (set
+                              HF_TOKEN if rate-limited); 'huggingface:<config>'
+                              pins a release slice (default: release_v3);
+                              <path> points at a local .jsonl.
+  --no-run-tests              Skip the sandboxed Python runner; pass/fail
+                              degrades to v0.1 "did the model produce code".
+                              Useful for fast smoke runs without python3.
+  --test-timeout <ms>         Per-test timeout. Default: 15000.
   --platforms <comma-list>    Filter by platform (leetcode,atcoder,
                               codeforces). Default: all.
   --difficulties <comma-list> Filter by difficulty (easy,medium,hard).
@@ -104,7 +112,7 @@ async function main(argv: readonly string[]): Promise<number> {
     return 0;
   }
   if (args.includes('--version') || args.includes('-v')) {
-    process.stdout.write('nexus-eval-livecodebench 0.1.0\n');
+    process.stdout.write('nexus-eval-livecodebench 0.2.0\n');
     return 0;
   }
 
@@ -116,6 +124,8 @@ async function main(argv: readonly string[]): Promise<number> {
       platforms: { type: 'string' },
       difficulties: { type: 'string' },
       'min-release-date': { type: 'string' },
+      'no-run-tests': { type: 'boolean', default: false },
+      'test-timeout': { type: 'string' },
       limit: { type: 'string' },
       concurrency: { type: 'string', default: '1' },
       timeout: { type: 'string', default: '300000' },
@@ -156,6 +166,10 @@ async function main(argv: readonly string[]): Promise<number> {
     ...(difficulties !== undefined && { difficulties }),
     ...(parsed.values['min-release-date'] !== undefined && {
       minReleaseDate: parsed.values['min-release-date'],
+    }),
+    ...(parsed.values['no-run-tests'] === true && { runTests: false }),
+    ...(parsed.values['test-timeout'] !== undefined && {
+      testTimeoutMs: Number(parsed.values['test-timeout']),
     }),
   });
 

@@ -54,19 +54,21 @@ describe('LiveCodeBenchAdapter', () => {
     expect(adapter.isPass(verdict)).toBe(false);
   });
 
-  it('isPass true when code is non-empty', async () => {
+  it('isPass true when code is non-empty (with runTests off)', async () => {
     const adapter = new LiveCodeBenchAdapter(
-      makeMockModelAdapter('```python\ndef f(): return 1\n```')
+      makeMockModelAdapter('```python\ndef f(): return 1\n```'),
+      { runTests: false }
     );
     const prediction = await adapter.runInstance(fixtureInstance, {} as never);
     const verdict = await adapter.evaluate(fixtureInstance, prediction);
     expect(adapter.isPass(verdict)).toBe(true);
   });
 
-  it('end-to-end against bundled fixture (4 problems)', async () => {
+  it('end-to-end against bundled fixture (4 problems, runTests off)', async () => {
     const response = '```python\nclass Solution:\n    pass\n```';
     const adapter = new LiveCodeBenchAdapter(makeMockModelAdapter(response), {
       source: 'fixture',
+      runTests: false,
     });
     const summary = await runBenchmark(adapter, {});
     expect(summary.name).toBe('livecodebench');

@@ -28,6 +28,7 @@ import type {
 
 import { loadLiveCodeBenchInstances } from './runner/instance-loader.js';
 import { generatePrediction } from './runner/agent-invoker.js';
+import { runPython, type RunPythonOptions } from './runner/python-runner.js';
 import type {
   LiveCodeBenchAdapterConfig,
   LiveCodeBenchEvalResult,
@@ -46,7 +47,12 @@ export class LiveCodeBenchAdapter
 
   private readonly modelAdapter: IModelAdapter;
   private readonly config: LiveCodeBenchAdapterConfig;
-  private readonly resultCache = new Map<string, LiveCodeBenchEvalResult>();
+  /**
+   * Model-only verdict captured during runInstance — evaluate() picks
+   * it up so the test runner has a sensible fallback when tests are
+   * skipped (runTests=false or no publicTests).
+   */
+  private readonly modelOnlyVerdictCache = new Map<string, LiveCodeBenchEvalResult>();
 
   constructor(modelAdapter: IModelAdapter, config: LiveCodeBenchAdapterConfig = {}) {
     this.modelAdapter = modelAdapter;
@@ -54,16 +60,15 @@ export class LiveCodeBenchAdapter
   }
 
   loadInstances(_runConfig: Record<string, unknown>): Promise<readonly LiveCodeBenchInstance[]> {
-    return Promise.resolve(
-      loadLiveCodeBenchInstances({
-        ...(this.config.source !== undefined && { source: this.config.source }),
-        ...(this.config.platforms !== undefined && { platforms: this.config.platforms }),
-        ...(this.config.difficulties !== undefined && { difficulties: this.config.difficulties }),
-        ...(this.config.minReleaseDate !== undefined && {
-          minReleaseDate: this.config.minReleaseDate,
-        }),
-      })
-    );
+    return loadLiveCodeBenchInstances({
+      ...(this.config.source !== undefined && { source: this.config.source }),
+      ...(this.config.platforms !== undefined && { platforms: this.config.platforms }),
+      ...(this.config.difficulties !== undefined && { difficulties: this.config.difficulties }),
+      ...(this.config.minReleaseDate !== undefined && {
+        minReleaseDate: this.config.minReleaseDate,
+      }),
+      ...(this.config.cacheDir !== undefined && { hfOptions: { cacheDir: this.config.cacheDir } }),
+    });
   }
 
   async runInstance(
@@ -80,7 +85,7 @@ export class LiveCodeBenchAdapter
         modelLabel: this.modelAdapter.modelId,
         durationMs: 0,
       };
-      this.resultCache.set(instance.instanceId, {
+      this.modelOnlyVerdictCache.set(instance.instanceId, {
         instanceId: instance.instanceId,
         platform: instance.platform,
         difficulty: instance.difficulty,
@@ -91,7 +96,7 @@ export class LiveCodeBenchAdapter
     }
 
     const codeProduced = result.value.code.length > 0;
-    this.resultCache.set(instance.instanceId, {
+    this.modelOnlyVerdictCache.set(instance.instanceId, {
       instanceId: instance.instanceId,
       platform: instance.platform,
       difficulty: instance.difficulty,
@@ -101,20 +106,67 @@ export class LiveCodeBenchAdapter
     return result.value;
   }
 
-  evaluate(
+  /**
+   * v0.2: when `runTests` is on (default) and the instance has at least
+   * one public test, exercises the model's emitted code in a sandboxed
+   * Python subprocess. Otherwise returns the v0.1 model-only verdict.
+   */
+  async evaluate(
     instance: LiveCodeBenchInstance,
     prediction: LiveCodeBenchPrediction
   ): Promise<LiveCodeBenchEvalResult> {
-    const cached = this.resultCache.get(instance.instanceId);
-    if (cached !== undefined) return Promise.resolve(cached);
-    const passed = prediction.code.length > 0;
-    return Promise.resolve({
+    const cached = this.modelOnlyVerdictCache.get(instance.instanceId);
+    const baseVerdict: LiveCodeBenchEvalResult =
+      cached ??
+      ((): LiveCodeBenchEvalResult => {
+        const passed = prediction.code.length > 0;
+        return {
+          instanceId: instance.instanceId,
+          platform: instance.platform,
+          difficulty: instance.difficulty,
+          passed,
+          ...(passed ? {} : { reason: 'evaluate() called without runInstance' }),
+        };
+      })();
+
+    const runTestsEnabled = this.config.runTests ?? true;
+    const hasTests = instance.publicTests.length > 0;
+    const codeProduced = prediction.code.length > 0;
+    if (!runTestsEnabled || !hasTests || !codeProduced) {
+      return baseVerdict;
+    }
+
+    const opts: RunPythonOptions = {};
+    if (this.config.testTimeoutMs !== undefined) {
+      Object.assign(opts, { perTestTimeoutMs: this.config.testTimeoutMs });
+    }
+    if (this.spawnImplForTests !== undefined) {
+      Object.assign(opts, { spawnImpl: this.spawnImplForTests });
+    }
+    const r = await runPython(instance, prediction, opts);
+
+    return {
       instanceId: instance.instanceId,
       platform: instance.platform,
       difficulty: instance.difficulty,
-      passed,
-      ...(passed ? {} : { reason: 'evaluate() called without runInstance' }),
-    });
+      passed: r.passed,
+      testsRun: r.testsRun,
+      testsPassed: r.testsPassed,
+      ...(r.stderr.length > 0 && { testStderr: r.stderr }),
+      ...(r.toolchainMissing && {
+        toolchainMissing: true,
+        reason: 'python3 not found in PATH (toolchain missing)',
+      }),
+      ...(!r.passed && !r.toolchainMissing && {
+        reason: `${String(r.testsPassed)}/${String(r.testsRun)} public tests passed`,
+      }),
+    };
+  }
+
+  private spawnImplForTests: RunPythonOptions['spawnImpl'];
+  /** Test-only: inject a mock spawn implementation. */
+  setSpawnImplForTests(impl: RunPythonOptions['spawnImpl']): void {
+    this.spawnImplForTests = impl;
   }
 
   isPass(result: LiveCodeBenchEvalResult): boolean {

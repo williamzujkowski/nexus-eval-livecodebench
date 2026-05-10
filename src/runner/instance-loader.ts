@@ -17,6 +17,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 
 import type { LiveCodeBenchInstance } from '../types.js';
+import { loadFromHuggingFace, type LoadFromHuggingFaceOptions } from './hf-loader.js';
 
 const FIXTURE: readonly LiveCodeBenchInstance[] = [
   {
@@ -76,23 +77,33 @@ const FIXTURE: readonly LiveCodeBenchInstance[] = [
 const VALID_PLATFORMS = new Set(['leetcode', 'atcoder', 'codeforces']);
 const VALID_DIFFICULTIES = new Set(['easy', 'medium', 'hard']);
 
-export function loadLiveCodeBenchInstances(args: {
+export async function loadLiveCodeBenchInstances(args: {
   readonly source?: 'fixture' | 'huggingface' | string;
   readonly platforms?: ReadonlyArray<LiveCodeBenchInstance['platform']>;
   readonly difficulties?: ReadonlyArray<LiveCodeBenchInstance['difficulty']>;
   readonly minReleaseDate?: string;
   readonly maxInstances?: number;
-}): readonly LiveCodeBenchInstance[] {
+  readonly hfOptions?: LoadFromHuggingFaceOptions;
+}): Promise<readonly LiveCodeBenchInstance[]> {
   const source = args.source ?? 'fixture';
 
   let all: readonly LiveCodeBenchInstance[];
   if (source === 'fixture') {
     all = FIXTURE;
-  } else if (source === 'huggingface') {
-    throw new Error(
-      'HuggingFace-fetch source is not yet implemented (v0.2 follow-up). ' +
-        'Use --source <path-to.jsonl> with a local copy of livecodebench/code_generation_lite rows.'
-    );
+  } else if (source === 'huggingface' || source.startsWith('huggingface:')) {
+    const config = source.startsWith('huggingface:')
+      ? source.slice('huggingface:'.length)
+      : undefined;
+    all = await loadFromHuggingFace({
+      ...(args.hfOptions ?? {}),
+      ...(config !== undefined && config !== '' && { config }),
+      ...(args.platforms !== undefined && { platforms: args.platforms }),
+      ...(args.difficulties !== undefined && { difficulties: args.difficulties }),
+      ...(args.minReleaseDate !== undefined && { minReleaseDate: args.minReleaseDate }),
+      ...(args.maxInstances !== undefined && { maxInstances: args.maxInstances }),
+    });
+    // hf-loader applies filters internally; return early.
+    return all;
   } else {
     all = loadFromJsonl(source);
   }
