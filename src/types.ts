@@ -84,8 +84,20 @@ export interface LiveCodeBenchEvalResult {
   readonly instanceId: string;
   readonly platform: LiveCodeBenchInstance['platform'];
   readonly difficulty: LiveCodeBenchInstance['difficulty'];
+  /**
+   * v0.1: passed = "did the model produce extractable Python code".
+   * v0.2: passed = "did all public tests pass" when `runTests` is on.
+   */
   readonly passed: boolean;
   readonly reason?: string;
+  /** v0.2: count of public tests run. Undefined when tests skipped. */
+  readonly testsRun?: number;
+  /** v0.2: count of public tests that passed. */
+  readonly testsPassed?: number;
+  /** v0.2: truncated stderr from the failing test, for diagnosis. */
+  readonly testStderr?: string;
+  /** v0.2: true iff the Python toolchain wasn't installed. */
+  readonly toolchainMissing?: boolean;
 }
 
 export interface LiveCodeBenchAdapterConfig {
@@ -93,7 +105,8 @@ export interface LiveCodeBenchAdapterConfig {
    * Where to load instances from.
    *
    * - `'fixture'` (default): bundled four-problem smoke set
-   * - `'huggingface'`: fetch from `livecodebench/code_generation_lite` (v0.2 — not yet implemented)
+   * - `'huggingface'`: fetch from `livecodebench/code_generation_lite` default release slice
+   * - `'huggingface:<config>'`: fetch a specific dataset release slice (e.g. `release_v3`)
    * - any other string: treat as an absolute path to a `.jsonl` file
    */
   readonly source?: 'fixture' | 'huggingface' | string;
@@ -106,6 +119,14 @@ export interface LiveCodeBenchAdapterConfig {
    * to avoid training-data contamination on a given model.
    */
   readonly minReleaseDate?: string;
-  /** Reserved for v0.2 HuggingFace-fetch caching. */
+  /** v0.2 HuggingFace-fetch caching root. */
   readonly cacheDir?: string;
+  /**
+   * v0.2: actually run the model's emitted code against the public
+   * tests via a sandboxed Python subprocess. Default: `true`.
+   * Set to `false` for fast smoke runs without Python installed.
+   */
+  readonly runTests?: boolean;
+  /** v0.2: per-test timeout. Default: 15_000ms. */
+  readonly testTimeoutMs?: number;
 }

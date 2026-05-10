@@ -1,6 +1,6 @@
 {
   "name": "nexus-eval-livecodebench",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "LiveCodeBench evaluation harness for nexus-agents — competitive-programming benchmark with deterministic per-problem hidden tests (Python; LeetCode / AtCoder / Codeforces)",
   "type": "module",
   "main": "dist/index.js",
