@@ -2,7 +2,7 @@
 
 LiveCodeBench evaluation harness for [nexus-agents](https://github.com/williamzujkowski/nexus-agents) — implements the `BenchmarkAdapter` contract from nexus-agents ≥ 2.33.1.
 
-> **Status**: v0.2 — real test-based pass/fail. HuggingFace loader pulls from `livecodebench/code_generation_lite` (default `release_v3` slice; pin via `--source huggingface:<config>`); sandboxed Python runner exercises the model's emitted solution against each instance's public tests via subprocess `python3`. Set `runTests: false` (or pass `--no-run-tests`) to fall back to the v0.1 "did the model produce code" pass/fail. Hidden-test join from upstream's `private_test_cases` companion dataset is the v0.3 follow-up.
+> **Status**: v0.3 — multi-turn agentic flow. Opt in with `agenticMode: true` (or `--agentic-mode`); the model gets `read_problem` / `write_solution` / `run_tests` tools and iterates until tests pass. Built on the `IAgenticAdapter` primitive from nexus-agents 2.72.1. v0.2 single-shot mode (HF loader + sandboxed Python runner) remains the default. Hidden-test join from upstream's `private_test_cases` companion dataset is still a follow-up.
 
 ## Why LiveCodeBench
 
