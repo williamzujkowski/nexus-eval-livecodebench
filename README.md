@@ -2,7 +2,7 @@
 
 LiveCodeBench evaluation harness for [nexus-agents](https://github.com/williamzujkowski/nexus-agents) — implements the `BenchmarkAdapter` contract from nexus-agents ≥ 2.33.1.
 
-> **Status**: v0.1 model-only baseline. Bundled four-problem smoke fixture, Python-solution prompt template, fenced-code extractor, IModelAdapter-driven runner. HuggingFace loader is the v0.2 follow-up; sandboxed Python runner for true test-based pass/fail is also v0.2.
+> **Status**: v0.2 — real test-based pass/fail. HuggingFace loader pulls from `livecodebench/code_generation_lite` (default `release_v3` slice; pin via `--source huggingface:<config>`); sandboxed Python runner exercises the model's emitted solution against each instance's public tests via subprocess `python3`. Set `runTests: false` (or pass `--no-run-tests`) to fall back to the v0.1 "did the model produce code" pass/fail. Hidden-test join from upstream's `private_test_cases` companion dataset is the v0.3 follow-up.
 
 ## Why LiveCodeBench
 
@@ -32,19 +32,31 @@ export OPENAI_API_KEY=sk-...
 export OPENAI_BASE_URL=https://your-gateway/v1   # optional
 export MODEL_ID=anthropic/claude-sonnet-4-6      # optional
 
-# Smoke test against the bundled four-problem fixture (no network)
-npx nexus-eval-livecodebench --source fixture
+# Smoke test against the bundled four-problem fixture (no network, no
+# python3 needed — fixture has hand-curated public tests).
+npx nexus-eval-livecodebench --source fixture --no-run-tests
+
+# Real run against the upstream HuggingFace dataset (v0.2: paginates
+# datasets-server, caches to ~/.nexus-eval-livecodebench/). Requires
+# python3 in PATH for true test-based pass/fail.
+npx nexus-eval-livecodebench --source huggingface --limit 25
+
+# Pin a specific release slice for reproducibility
+npx nexus-eval-livecodebench --source huggingface:release_v3 --limit 25
 
 # Run against a local .jsonl matching code_generation_lite schema
 npx nexus-eval-livecodebench --source ./code_generation_lite.jsonl --limit 25
 
 # Filter to LeetCode + Codeforces, hard only
-npx nexus-eval-livecodebench --source fixture \
-  --platforms leetcode,codeforces --difficulties hard
+npx nexus-eval-livecodebench --source huggingface \
+  --platforms leetcode,codeforces --difficulties hard --limit 10
 
 # Contamination guard — only problems released after the model's training cutoff
-npx nexus-eval-livecodebench --source ./code_generation_lite.jsonl \
-  --min-release-date 2024-08-01
+npx nexus-eval-livecodebench --source huggingface \
+  --min-release-date 2024-08-01 --limit 10
+
+# Skip the test runner (fast smoke without python3 installed)
+npx nexus-eval-livecodebench --source huggingface --no-run-tests --limit 5
 
 # JSON summary for piping
 npx nexus-eval-livecodebench --json --source fixture > run.json
@@ -83,27 +95,42 @@ for (const [name, stats] of Object.entries(meta.byDifficulty)) {
 
 Operators with their own `IModelAdapter` (Claude API, Ollama, anything implementing the contract) can substitute it for `createOpenAIAdapter` without changing anything else.
 
-## What v0.1 actually does
+## What v0.2 actually does
 
-- Loads problems from the bundled four-problem fixture (one each across LeetCode/AtCoder/Codeforces × easy/medium/hard combinations) or from a local `.jsonl` matching the upstream `livecodebench/code_generation_lite` schema.
-- Composes a competitive-programming prompt that lists problem statement, public tests, and (optional) starter code, and asks for a single fenced ` ```python ``` ` block.
-- Parses the response: prefers the last `python`-tagged fence, falls back to the last untagged fence, falls back to "looks like raw Python" heuristic, otherwise empty.
-- Reports pass/fail = "did the model produce extractable code", with per-platform AND per-difficulty breakdowns.
+**Loader (3 sources):**
 
-## What v0.1 does NOT do
+- `--source fixture` — bundled four-problem smoke set (LeetCode / AtCoder / Codeforces × easy/medium/hard), no network
+- `--source huggingface[:<config>]` — pages through the [`livecodebench/code_generation_lite` HuggingFace dataset](https://huggingface.co/datasets/livecodebench/code_generation_lite) via the datasets-server JSON API. Default config: `release_v3`. Caches to `~/.nexus-eval-livecodebench/cache/<dataset>/<config>/<split>/instances.json`. Set `HF_TOKEN` env var if you hit rate limits on heavy paginations
+- `--source <local.jsonl>` — read from disk; same schema as the upstream dataset
 
-- Run the hidden tests against the emitted code. Pass/fail is "code produced", not "code passes tests" — that's the v0.2 follow-up.
-- Fetch problems from `livecodebench/code_generation_lite` directly. Use `--source <local.jsonl>` for now (the loader handles the upstream schema).
-- Drive multi-turn agentic flows. Single round-trip only.
+**Filters apply at fetch boundary:** `--platforms` / `--difficulties` / `--min-release-date` / `--limit` short-circuit pagination so we don't fetch everything just to filter most of it.
+
+**Prompt:** competitive-programming format. Problem statement + public sample I/O pairs + (optional) starter code. Model emits a single fenced ` ```python ``` ` block.
+
+**Code extraction:** prefers the last `python`-tagged fence > last untagged fence > raw-Python heuristic.
+
+**Evaluation (v0.2 default):** materialises the model's solution to a tmpdir + spawns `python3` per public test. Two competitive-programming styles auto-detected from the instance:
+
+- **LeetCode-style** (starterCode declares `class Solution`): synthesises a tiny driver that imports `Solution`, evaluates the test setup expression (e.g. `nums = [1,2], target = 3`), introspects the only public method, calls it with the named args, compares to the expected output literal.
+- **AtCoder/Codeforces-style** (no class skeleton): spawns `python3` with `test.input` on stdin, diffs stdout against `test.expectedOutput`.
+
+Pass = all public tests pass within timeout. `-x` semantics: stops on first failing test. Sandboxing: tmpdir, `spawn` (no shell), 15s default per-test timeout via `setTimeout` + `SIGKILL`, env scrubbed of secrets (`OPENAI_*`, `NEXUS_*`, `HF_TOKEN`, `AWS_*`, ...), output capped at 4 KB per stream.
+
+Per-platform AND per-difficulty pass-rate breakdowns surface in the summary metadata.
+
+## What v0.2 does NOT do
+
+- Join the upstream `private_test_cases` companion dataset for the full hidden-test set. v0.2 evaluation runs the published `public_test_cases` only — adequate for the rolling-contamination signal but understates real LiveCodeBench pass-rates relative to the leaderboard.
+- Other LiveCodeBench tasks (`self_repair`, `test_output_prediction`, `code_execution`) — each is a separate task family that would land as its own adapter variant.
+- Multi-turn agentic flows.
 
 ## Roadmap
 
-| Issue | Scope                                                                                                                                                  |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| TBD   | **v0.2 — HuggingFace-fetch loader**. Pull from `livecodebench/code_generation_lite` directly with on-disk caching + release-date filtering.            |
-| TBD   | **v0.2 — Sandboxed Python runner**. Execute hidden tests in a process-isolated subprocess; turn that into the canonical pass/fail.                     |
-| TBD   | **v0.3 — Other tasks**. Add `self_repair`, `test_output_prediction`, `code_execution` as adapter variants — each is a separate row in the same dataset family. |
-| TBD   | **v0.3 — Agentic flow** via `ICliAdapter` so the model can iterate when initial tests fail.                                                            |
+| Issue | Scope                                                                                                                                                                                  |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TBD   | **v0.3 — Hidden tests join**. Pull `private_test_cases` from the companion dataset; combine with the public set so pass/fail matches the upstream leaderboard's grading.               |
+| TBD   | **v0.3 — Other task families** (`self_repair` / `test_output_prediction` / `code_execution`).                                                                                          |
+| TBD   | **v0.3 — Agentic flow** via `ICliAdapter` so the model can iterate when initial tests fail.                                                                                            |
 
 Cross-repo tracking lives at [nexus-agents #2519](https://github.com/williamzujkowski/nexus-agents/issues/2519) (Tier 2 prioritisation).
 
