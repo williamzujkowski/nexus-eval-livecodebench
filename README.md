@@ -1,6 +1,6 @@
 # nexus-eval-livecodebench
 
-LiveCodeBench evaluation harness for [nexus-agents](https://github.com/williamzujkowski/nexus-agents) — implements the `BenchmarkAdapter` contract from nexus-agents ≥ 2.33.1.
+LiveCodeBench evaluation harness for [nexus-agents](https://github.com/nexus-substrate/nexus-agents) — implements the `BenchmarkAdapter` contract from nexus-agents ≥ 2.33.1.
 
 > **Status**: v0.3 — multi-turn agentic flow. Opt in with `agenticMode: true` (or `--agentic-mode`); the model gets `read_problem` / `write_solution` / `run_tests` tools and iterates until tests pass. Built on the `IAgenticAdapter` primitive from nexus-agents 2.72.1. v0.2 single-shot mode (HF loader + sandboxed Python runner) remains the default. Hidden-test join from upstream's `private_test_cases` companion dataset is still a follow-up.
 
@@ -14,7 +14,7 @@ LiveCodeBench evaluation harness for [nexus-agents](https://github.com/williamzu
 - **Deterministic hidden tests** — every problem has a fixed test set, so pass/fail is mechanical (no LLM-judge, no human eval).
 - **Standard reference number** — Anthropic and OpenAI both publish LiveCodeBench scores routinely, so operators have a calibration target for routing decisions.
 
-This repo is the dedicated harness for running LiveCodeBench through nexus-agents' orchestration. Per the [nexus-agents harness-extraction policy](https://github.com/williamzujkowski/nexus-agents/issues/2514), benchmarks live in standalone `nexus-eval-*` repos so they evolve independently of the core.
+This repo is the dedicated harness for running LiveCodeBench through nexus-agents' orchestration. Per the [nexus-agents harness-extraction policy](https://github.com/nexus-substrate/nexus-agents/issues/2514), benchmarks live in standalone `nexus-eval-*` repos so they evolve independently of the core.
 
 ## Install
 
@@ -132,7 +132,7 @@ Per-platform AND per-difficulty pass-rate breakdowns surface in the summary meta
 | TBD   | **v0.3 — Other task families** (`self_repair` / `test_output_prediction` / `code_execution`).                                                                                          |
 | TBD   | **v0.3 — Agentic flow** via `ICliAdapter` so the model can iterate when initial tests fail.                                                                                            |
 
-Cross-repo tracking lives at [nexus-agents #2519](https://github.com/williamzujkowski/nexus-agents/issues/2519) (Tier 2 prioritisation).
+Cross-repo tracking lives at [nexus-agents #2519](https://github.com/nexus-substrate/nexus-agents/issues/2519) (Tier 2 prioritisation).
 
 ## The contract
 
