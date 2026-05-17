@@ -13,7 +13,7 @@
  * ... until pass or turn budget. Stops on AbortSignal.
  *
  * Shape mirrors nexus-eval-aider-polyglot's agentic-flow (#9). The
- * v0.3 RFC ([livecodebench#7](https://github.com/williamzujkowski/nexus-eval-livecodebench/issues/7))
+ * v0.3 RFC ([livecodebench#7](https://github.com/nexus-substrate/nexus-eval-livecodebench/issues/7))
  * called for hidden-test join + agentic flow as separate v0.3 pieces;
  * this PR ships the agentic flow against the public tests we already
  * surface in v0.2. Hidden-test join is the natural follow-up.
